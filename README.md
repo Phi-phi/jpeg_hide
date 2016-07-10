@@ -1,2 +1,2 @@
-# jpeg_hide
+# JPEG HIDE
 Steganography using JPG
