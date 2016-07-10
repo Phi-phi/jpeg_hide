@@ -27,3 +27,8 @@
 *.exe
 *.out
 *.app
+
+# JPG File
+*.jpg
+*.JPG
+*.jpeg
