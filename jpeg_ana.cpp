@@ -49,7 +49,20 @@ typedef struct sof {
 	vector<por_t> pors;
 } sof_t;
 
+typedef struct dh_table_inf {
+	int id;
+	int act_cd;
+	int dct_inf;
+} dht_inf;
 
+typedef struct sos {
+	int dht_inf_count;
+	int s_start;
+	int s_end;
+	int ah;
+	int al;
+	vector<dht_inf> infs;
+} sos_t;
 
 void indicate(vector<BYTE> vect) {
 	for (int i = 0; i < vect.size(); ++i) {
@@ -141,7 +154,7 @@ vector<dht_t> ana_dht(VECTARR(BYTE) vect) {
 		++index;
 		if (!t.tc) printf("DC table Cd:%d\n", t.th);
 		else printf("AC table Cd:%d\n", t.th);
-			
+
 		for (int bit_length = 1; bit_length <= 16; ++bit_length) {
 			int haff_counts = seg[bit_length];
 			if (haff_counts > 0) {
@@ -150,7 +163,7 @@ vector<dht_t> ana_dht(VECTARR(BYTE) vect) {
 					unsigned char bin_haff = now_haff;
 					dynamic_bitset<> bit_value(bit_length, now_haff);
 					to_string(bit_value, ht.haff);
-					
+
 					++now_haff;
 					haff_arr.push_back(ht);
 				}
@@ -206,6 +219,9 @@ vector<sof_t> ana_sof(VECTARR(BYTE) vect) {
 		tables.push_back(t);
 	}
 	return tables;
+}
+
+vector<sos_t> ana_sos(VECTARR(BYTE) vect) {
 }
 
 int main(int argc, char* argv[]) {
@@ -279,6 +295,10 @@ int main(int argc, char* argv[]) {
 	}
 
 	printf("***SOS***\n");
+	for (int i = 0; i < ffda.size(); ++i) {
+		indicate(ffda[i]);
+	}
+
 
 
 	return 0;
