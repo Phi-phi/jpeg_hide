@@ -36,3 +36,5 @@
 #Vim file
 *.swp
 *.swo
+
+.vscode
