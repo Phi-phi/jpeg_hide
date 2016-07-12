@@ -64,6 +64,19 @@ typedef struct sos {
   vector<dht_inf> infs;
 } sos_t;
 
+typedef struct image_infomation {
+  int all_size;
+  int img_type;
+} image_inf;
+
+typedef struct segment_tables {
+  vector<BYTE> dqt;
+  vector<BYTE> dht;
+  vector<BYTE> sof;
+  vector<BYTE> sos;
+  vector<BYTE> img_data;
+} segments;
+
 // for debug
 void indicate(vector<BYTE> vect) {
   for (int i = 0; i < vect.size(); ++i) {
@@ -255,9 +268,27 @@ vector<sos_t> ana_sos(VECTARR(BYTE) vect) {
   return tables;
 }
 
+int get_segment_length(vector<BYTE> vect, int seg_index) {
+  return (vect[seg_index + 2] << 8) + vect[seg_index + 3] - 2;
+}
+
+vector<BYTE> get_image_data(vector<BYTE> vect, int img_mode) {
+  vector<BYTE> result;
+  int sos_index = search_vct(vect, "ffda");
+  int sos_len = get_segment_length(vect, sos_index);
+  if (img_mode == 1) {
+    int end_index = search_vct(vect, "ffd9");
+    for (int i = sos_index + sos_len + 2; i < end_index; ++i){
+      result.push_back(vect[i]);
+    }
+  }
+  return result;
+}
+
 int main(int argc, char* argv[]) {
   const char *filepath = argv[1];
   vector<BYTE> img_raw;
+  image_inf inf;
   int zig_zag[] = { 0, 1, 8, 16, 9, 2, 3, 10,
     17, 24, 32, 25, 18, 11, 4, 5,
     12, 19, 26, 33, 40, 48, 41, 34,
@@ -279,8 +310,7 @@ int main(int argc, char* argv[]) {
   ifs.seekg(0, ios::beg).read((char*)&img_raw[0], img_raw.size());
   ifs.close();
 
-
-  printf("%d\n", img_raw.size());
+  inf.all_size = img_raw.size();
 
   int if_jpg_index = search_vct(img_raw, "ffd8");
 
@@ -297,7 +327,11 @@ int main(int argc, char* argv[]) {
   VECTARR(BYTE) ffdb = get_segments(img_raw, "ffdb");
   VECTARR(BYTE) ffc4 = get_segments(img_raw, "ffc4");
   VECTARR(BYTE) ffcx_sof = get_segments(img_raw, "ffc0");
-  if (ffcx_sof.size() == 0) ffcx_sof = get_segments(img_raw, "ffc2");
+  if (ffcx_sof.size() == 0) {
+    inf.img_type = 2;
+    ffcx_sof = get_segments(img_raw, "ffc2");
+  }
+
   VECTARR(BYTE) ffda = get_segments(img_raw, "ffda");
 
   printf("***DHT***\n");
@@ -341,7 +375,8 @@ int main(int argc, char* argv[]) {
     printf("Now scan: %d\n", t.al);
   }
 
-
+  printf("***IMAGE DATA***\n");
+  vector<BYTE> img_data = get_image_data(img_raw, 1);
 
   return 0;
 
