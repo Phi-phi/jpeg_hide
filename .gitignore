@@ -40,3 +40,4 @@
 #other
 core
 .vscode
+tmp/*
