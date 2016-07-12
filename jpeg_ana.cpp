@@ -52,7 +52,7 @@ typedef struct sof {
 typedef struct dh_table_inf {
   int id;
   int act_cd;
-  int dct_inf;
+  int dct_cd;;
 } dht_inf;
 
 typedef struct sos {
@@ -64,6 +64,7 @@ typedef struct sos {
   vector<dht_inf> infs;
 } sos_t;
 
+// for debug
 void indicate(vector<BYTE> vect) {
   for (int i = 0; i < vect.size(); ++i) {
     printf("%2x", vect[i]);
@@ -221,7 +222,37 @@ vector<sof_t> ana_sof(VECTARR(BYTE) vect) {
   return tables;
 }
 
+vector<dht_inf> ana_sos_block(vector<BYTE> vect, int count) {
+  vector<dht_inf> tables;
+  int index = 2;
+  for (int i = 0; i < count; ++i) {
+    dht_inf t;
+    t.id = vect[++index];
+    int t_data = vect[++index];
+    t.dct_cd = t_data >> 4;
+    t.act_cd = t_data & 0x0f;
+    tables.push_back(t);
+  }
+  return tables;
+}
+
 vector<sos_t> ana_sos(VECTARR(BYTE) vect) {
+  vector<BYTE> seg;
+  vector<sos_t> tables;
+  for (int i = 0; i < vect.size(); ++i) {
+    seg = vect[0];
+    sos_t t;
+    int len = (seg[0] << 8) + seg[1] - 2;
+    t.dht_inf_count = seg[2];
+    int after_dht_block_index = t.dht_inf_count * 2 + 3;
+    t.s_start = seg[after_dht_block_index];
+    t.s_end = seg[++after_dht_block_index];
+    t.ah = seg[++after_dht_block_index] >> 4;
+    t.al = seg[after_dht_block_index] & 0x0f;
+    t.infs = ana_sos_block(seg, t.dht_inf_count);
+    tables.push_back(t);
+  }
+  return tables;
 }
 
 int main(int argc, char* argv[]) {
@@ -297,6 +328,17 @@ int main(int argc, char* argv[]) {
   printf("***SOS***\n");
   for (int i = 0; i < ffda.size(); ++i) {
     indicate(ffda[i]);
+  }
+  vector<sos_t> sos_tables = ana_sos(ffda);
+  for (int i = 0; i < sos_tables.size(); ++i) {
+    sos_t t = sos_tables[i];
+    for(int j = 0; j < t.dht_inf_count; ++j) {
+      dht_inf inf = t.infs[j];
+      printf("id: %d, ac: %d, dc: %d\n", inf.id, inf.act_cd, inf.dct_cd);
+    }
+    printf("s_start: %d, s_end: %d\n", t.s_start, t.s_end);
+    printf("Before scan: %d\n", t.ah);
+    printf("Now scan: %d\n", t.al);
   }
 
 
