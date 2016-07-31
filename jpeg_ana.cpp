@@ -5,6 +5,7 @@
 #include <iterator>
 #include <vector>
 #include <cstring>
+#include <climits>
 #include <stdlib.h>
 #include <typeinfo>
 #include <boost/dynamic_bitset.hpp>
@@ -275,7 +276,7 @@ int get_segment_length(vector<BYTE> vect, int seg_index) {
 vector<BYTE> get_image_data(vector<BYTE> vect, int img_mode) {
   vector<BYTE> result;
   int sos_index = search_vct(vect, "ffda");
-  int sos_len = get_segment_length(vect, sos_index);
+  int sos_len = get_segment_length(vect, sos_index) + 2; // 2 is marker's lengt
   if (img_mode == 1) {
     int end_index = search_vct(vect, "ffd9");
     for (int i = sos_index + sos_len + 2; i < end_index; ++i){
@@ -283,6 +284,123 @@ vector<BYTE> get_image_data(vector<BYTE> vect, int img_mode) {
     }
   }
   return result;
+}
+
+vector<BYTE> set_ff00_to_ff(vector<BYTE> vect) {
+  for (int i = 0; i < vect.size() - 1; ++i) {
+    if (cmp_bin(vect[i], "ff") && cmp_bin(vect[i + 1], "00")) {
+      vect.erase(vect.begin() + i + 1, vect.begin() + i + 2);
+    }
+  }
+  return vect;
+}
+
+string cat_bin_str(vector<BYTE> vect) {
+  int vect_len = vect.size();
+  string bin_str;
+  for (int i = 0; i < vect_len; ++i) {
+    dynamic_bitset<> bit_value(8, vect[i]);
+    string bin_str_part;
+    to_string(bit_value, bin_str_part);
+    bin_str += bin_str_part;
+  }
+
+  return bin_str;
+}
+
+VECTARR(int) ana_block(
+    vector<BYTE>    img_data,
+    vector<dqt_t>   dqts,
+    vector<dht_t>   dhts,
+    sos_t           sos,
+    sof_t           sof
+  ) {
+  VECTARR(int) boxes;
+  string bin_str = cat_bin_str(img_data);
+  int start_index = 0;
+  int num_index = 0;
+  int block_index = 0;
+  int num_count_in_block = 0;
+  int bin_len = bin_str.size();
+  cout << bin_str << endl;
+  int dc_ac_switch = 0; // 0 is dc. 1 is ac.
+
+  vector<int> id_box;
+  vector<int> dqt_box;
+  
+  vector<int> block;
+  dht_inf table_inf;
+  vector<haff_t> haffs;
+  dqt_t dqt_t;
+
+  for(int i = 0; i < sof.pors.size(); ++i){
+    int por_length = sof.pors[i].vn * sof.pors[i].hn;
+    id_box.insert(id_box.end(), por_length, sof.pors[i].id);
+    dqt_box.push_back(sof.pors[i].dqn);
+  }
+
+  while (num_index < bin_len) {
+    int now_block_id_index = block_index % id_box.size();
+    int now_block_id = id_box[now_block_id_index];
+
+    for(int i = 0; i < sos.infs.size(); ++i){
+      if(sos.infs[i].id == now_block_id){
+        table_inf = sos.infs[i];
+        break;
+      }
+    }
+
+    if(dc_ac_switch == 0) {
+      printf("DC\n");
+      string haff = bin_str.substr(start_index, num_index);
+      for(int i = 0; i < dhts.size(); ++i){
+        if(dhts[i].tc == 0 && dhts[i].tc == now_block_id){
+          haffs = dhts[i].haffs;
+          break;
+        }
+      }
+      for(int i = 0; i < haffs.size(); ++i){
+        if(haffs[i].haff == haff){
+          start_index += num_index;
+          int data_len = haffs[i].val;
+          string data_bit = bin_str.substr(start_index, data_len);
+          dynamic_bitset<> raw_data_bit(data_bit);
+          int data_num;
+          if(data_bit[0] == 1){
+            data_num = -1 * (int)raw_data_bit.flip().to_ulong();
+          } else{
+            data_num = (int)raw_data_bit.to_ulong();
+          }
+          cout << haff << ": " << data_num << endl;
+          block.push_back(data_num);
+          ++num_count_in_block;
+          dc_ac_switch = 1;
+          start_index += data_len;
+          break;
+        }
+        ++num_index;
+      }
+    }else {
+      printf("AC\n");
+      string haff = bin_str.substr(start_index, num_index);
+      for(int i = 0; i < dhts.size(); ++i){
+        if(dhts[i].tc == 1 && dhts[i].tc == now_block_id){
+          haffs = dhts[i].haffs;
+          break;
+        }
+      }
+      for(int i = 0; i < haffs.size(); ++i){
+        if(haffs[i].haff == haff){
+          start_index += num_index;
+          int data_len = haffs[i].val;
+          int zero_len = haffs[i].r_len;
+
+        }
+      }
+    }
+  }
+
+  return boxes;
 }
 
 int main(int argc, char* argv[]) {
@@ -334,6 +452,8 @@ int main(int argc, char* argv[]) {
 
   VECTARR(BYTE) ffda = get_segments(img_raw, "ffda");
 
+  vector<dqt_t> dqt_tables = ana_dqt(ffdb);
+
   printf("***DHT***\n");
   vector<dht_t> dht_tables = ana_dht(ffc4);
   for (int i = 0; i < dht_tables.size(); ++i) {
@@ -349,14 +469,12 @@ int main(int argc, char* argv[]) {
     indicate(ffcx_sof[i]);
   }
   vector<sof_t> sof_tables = ana_sof(ffcx_sof);
-  for (int i = 0; i < sof_tables.size(); ++i) {
-    sof_t t = sof_tables[i];
-    printf("Width: %dpx Height: %dpx \n", t.wx, t.hy);
-    for (int j = 0; j < t.p_count; ++j) {
-      printf("BLOCK-%d\n", t.pors[j].id);
-      printf("X-s-rate: %d Y-s-rate: %d\n", t.pors[j].vn, t.pors[j].hn);
-      printf("DQ TABLE No:%d\n", t.pors[j].dqn);
-    }
+  sof_t t = sof_tables[0];
+  printf("Width: %dpx Height: %dpx \n", t.wx, t.hy);
+  for (int j = 0; j < t.p_count; ++j) {
+    printf("BLOCK-%d\n", t.pors[j].id);
+    printf("X-s-rate: %d Y-s-rate: %d\n", t.pors[j].vn, t.pors[j].hn);
+    printf("DQ TABLE No:%d\n", t.pors[j].dqn);
   }
 
   printf("***SOS***\n");
@@ -377,6 +495,11 @@ int main(int argc, char* argv[]) {
 
   printf("***IMAGE DATA***\n");
   vector<BYTE> img_data = get_image_data(img_raw, 1);
+  printf("len- %d\n", (int)img_data.size());
+
+  img_data = set_ff00_to_ff(img_data);
+  printf("Img data length %d\n", (int)img_data.size());
+  ana_block(img_data, dqt_tables, dht_tables, sos_tables, sof_tables[0]);
 
   return 0;
 
