@@ -86,6 +86,21 @@ void indicate(vector<BYTE> vect) {
   printf("\n");
 }
 
+void indicate_block(vector<int> block){
+  cout << "\n*indicate block*" << endl;
+  for(int i = 0; i < block.size(); ++i){
+    if(block[i] < 10 || block[i] < 0){
+      cout << " " << block[i] << ", " << flush;
+    }else{
+      cout << block[i] << ", " << flush;
+    }
+    if ((i + 1) % 8 == 0){
+      cout << endl;
+    }
+  }
+  cout << endl;
+}
+
 bool cmp_bin(BYTE vect, string bin) {
   //printf("%d %d\n", vect, strtol(bin.c_str(), NULL, 16));
   return (int)vect == strtol(bin.c_str(), NULL, 16);
@@ -309,6 +324,7 @@ string cat_bin_str(vector<BYTE> vect) {
 }
 
 VECTARR(int) ana_block(
+    int             zig_zag[],
     vector<BYTE>    img_data,
     vector<dqt_t>   dqts,
     vector<dht_t>   dhts,
@@ -332,6 +348,7 @@ VECTARR(int) ana_block(
   dht_inf table_inf;
   vector<haff_t> haffs;
   dqt_t dqt_t;
+  bool eob = false;
 
   for(int i = 0; i < sof.pors.size(); ++i){
     int por_length = sof.pors[i].vn * sof.pors[i].hn;
@@ -343,60 +360,129 @@ VECTARR(int) ana_block(
     int now_block_id_index = block_index % id_box.size();
     int now_block_id = id_box[now_block_id_index];
 
+    //cout << "now block id: " << now_block_id << endl;
+    //cout << "block index: " << block_index << endl;
+    //cout << "num index in block: " << num_count_in_block << endl;
+
     for(int i = 0; i < sos.infs.size(); ++i){
       if(sos.infs[i].id == now_block_id){
         table_inf = sos.infs[i];
         break;
       }
     }
+    //cout << 
+    //  "start index: " << start_index << 
+    //  " now index: " << num_index << 
+    //  endl;
 
     if(dc_ac_switch == 0) {
-      printf("DC\n");
-      string haff = bin_str.substr(start_index, num_index);
+      string haff = bin_str.substr(start_index, num_index - start_index);
+      //cout << "haff: " << haff << endl;
       for(int i = 0; i < dhts.size(); ++i){
-        if(dhts[i].tc == 0 && dhts[i].tc == now_block_id){
+        if(dhts[i].tc == 0 && dhts[i].th == table_inf.dct_cd){
           haffs = dhts[i].haffs;
           break;
         }
       }
       for(int i = 0; i < haffs.size(); ++i){
         if(haffs[i].haff == haff){
-          start_index += num_index;
+          //cout << "HIT.\n " <<
+          //  haff << " " << haffs[i].val << endl;
+          start_index = num_index;
           int data_len = haffs[i].val;
           string data_bit = bin_str.substr(start_index, data_len);
           dynamic_bitset<> raw_data_bit(data_bit);
           int data_num;
-          if(data_bit[0] == 1){
+          if(data_bit[0] == '1'){
             data_num = -1 * (int)raw_data_bit.flip().to_ulong();
           } else{
             data_num = (int)raw_data_bit.to_ulong();
           }
-          cout << haff << ": " << data_num << endl;
+          //cout << haff << ": " << data_num << endl;
           block.push_back(data_num);
           ++num_count_in_block;
           dc_ac_switch = 1;
-          start_index += data_len;
+          num_index += data_len;
+          start_index = num_index;
           break;
         }
-        ++num_index;
       }
     }else {
-      printf("AC\n");
-      string haff = bin_str.substr(start_index, num_index);
+      string haff = bin_str.substr(start_index, num_index - start_index);
+      //cout << "haff: " << haff << endl;
       for(int i = 0; i < dhts.size(); ++i){
-        if(dhts[i].tc == 1 && dhts[i].tc == now_block_id){
+        if(dhts[i].tc == 1 && dhts[i].th == table_inf.act_cd){
           haffs = dhts[i].haffs;
           break;
         }
       }
+      int max_len = haffs.back().haff.size();
+      if(haff.size() > max_len){
+        cout << "haff string over. \n not found." << endl;
+        exit(-1);
+      }
       for(int i = 0; i < haffs.size(); ++i){
         if(haffs[i].haff == haff){
-          start_index += num_index;
+          start_index = num_index;
           int data_len = haffs[i].val;
           int zero_len = haffs[i].r_len;
 
+          //cout << "HIT.\n" <<
+          //  haff << " " << data_len << " " << zero_len << endl;
+          
+          if(data_len == 0 && zero_len == 0){
+            //EOB
+            eob = true;
+          }else if(data_len == 0 && zero_len == 15){
+            //ZRL
+            block.insert(block.end(), 16, 0);
+            num_count_in_block += 16;
+          }else{
+            string data_bit = bin_str.substr(start_index, data_len);
+            dynamic_bitset<> raw_data_bit(data_bit);
+            //cout << data_bit << endl;
+            int data_num;
+            if(data_bit[0] == '1'){
+              data_num = -1 * (int)raw_data_bit.flip().to_ulong();
+            }else{
+              data_num = (int)raw_data_bit.to_ulong();
+            }
+            start_index += data_len;
+            
+            //cout << haff << ": " << data_num << endl;
+            block.insert(block.end(), zero_len, 0);
+            block.push_back(data_num);
+            num_count_in_block += 1 + zero_len;
+            num_index += data_len;
+          }
+          if(eob){
+            block.insert(block.end(), 64 - num_count_in_block, 0);
+            num_count_in_block = 64;
+            eob = false;
+          }
+          start_index = num_index;
+          break;
         }
       }
+    }
+    ++num_index;
+    //cout << endl;
+
+    if(num_count_in_block == 64){
+      //indicate_block(block);
+      vector<int> block_box(64);
+      for(int i = 0; i < 64; ++i){
+        block_box[zig_zag[i]] = block[i];
+      }
+      if(block_index > 0){
+        block_box[0] += boxes[block_index - 1][0];
+      }
+      indicate_block(block_box);
+      boxes.push_back(block_box);
+      dc_ac_switch = 0;
+      num_count_in_block = 0;
+      block.clear();
+      ++block_index;
     }
   }
 
@@ -499,7 +585,8 @@ int main(int argc, char* argv[]) {
 
   img_data = set_ff00_to_ff(img_data);
   printf("Img data length %d\n", (int)img_data.size());
-  ana_block(img_data, dqt_tables, dht_tables, sos_tables, sof_tables[0]);
+  VECTARR(int) blocks = ana_block(zig_zag, img_data, dqt_tables, dht_tables, sos_tables[0], sof_tables[0]);
+
 
   return 0;
 
