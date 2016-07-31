@@ -323,6 +323,32 @@ string cat_bin_str(vector<BYTE> vect) {
   return bin_str;
 }
 
+string to_bin_str(int n) {
+  bool minus = false;
+  string str, minus_str;
+  if(n < 0){
+    minus = true;
+    n *= -1;
+  }
+  while (n > 0) {
+    str.push_back('0' + (n & 1));
+    n >>= 1;
+  }
+  reverse(str.begin(), str.end());
+  if(!minus) return str;
+  boost::dynamic_bitset<> bs(str);
+  to_string(bs.flip(), minus_str);
+  return minus_str;
+}
+
+string search_haff(vector<haff_t> haffs, int value, int run_length = 0){
+  for(int i = 0; i < haffs.size(); ++i){
+    if(haffs[i].val == value && haffs[i].r_len == run_length){
+      return haffs[i].haff;
+    }
+  }
+}
+
 VECTARR(int) ana_block(
     int             zig_zag[],
     vector<BYTE>    img_data,
@@ -393,7 +419,7 @@ VECTARR(int) ana_block(
           string data_bit = bin_str.substr(start_index, data_len);
           dynamic_bitset<> raw_data_bit(data_bit);
           int data_num;
-          if(data_bit[0] == '1'){
+          if(data_bit[0] == '0'){
             data_num = -1 * (int)raw_data_bit.flip().to_ulong();
           } else{
             data_num = (int)raw_data_bit.to_ulong();
@@ -442,7 +468,7 @@ VECTARR(int) ana_block(
             dynamic_bitset<> raw_data_bit(data_bit);
             //cout << data_bit << endl;
             int data_num;
-            if(data_bit[0] == '1'){
+            if(data_bit[0] == '0'){
               data_num = -1 * (int)raw_data_bit.flip().to_ulong();
             }else{
               data_num = (int)raw_data_bit.to_ulong();
@@ -477,7 +503,7 @@ VECTARR(int) ana_block(
       if(block_index > 0){
         block_box[0] += boxes[block_index - 1][0];
       }
-      indicate_block(block_box);
+      //indicate_block(block_box);
       boxes.push_back(block_box);
       dc_ac_switch = 0;
       num_count_in_block = 0;
@@ -488,6 +514,122 @@ VECTARR(int) ana_block(
 
   return boxes;
 }
+
+string block_to_img(
+    int           zig_zag[],
+    vector<dqt_t> dqts,
+    vector<dht_t> dhts,
+    sos_t         sos,
+    sof_t         sof,
+    VECTARR(int)  blocks
+  ){
+  string img_str;
+  vector<int> id_box;
+  dht_inf table_inf;
+  int dc_ac_switch = 0; // 0 is dc, 1 is ac.
+
+  for(int i = 0; i < sof.pors.size(); ++i){
+    int por_length = sof.pors[i].vn * sof.pors[i].hn;
+    id_box.insert(id_box.end(), por_length, sof.pors[i].id);
+  }
+  
+  for(int block_index = 0; block_index < blocks.size(); ++block_index){
+    vector<int> raw_block = blocks[block_index];
+    vector<int> block;
+    int zrl = 0;
+    int zero_start_index = 0;
+    bool eob = false;
+
+    for(int i = 0; i < 64; ++i) block.push_back(raw_block[zig_zag[i]]);
+    if (block_index > 0) block[0] -= blocks[block_index - 1][0];
+    indicate_block(block);
+
+    int now_block_id = id_box[block_index % id_box.size()];
+    for( int i = 0; i < sos.infs.size(); ++i){
+      if(sos.infs[i].id == now_block_id){
+        table_inf = sos.infs[i];
+        break;
+      }
+    }
+
+    vector<haff_t> dc_haffs, ac_haffs;
+    for(int i = 0; i < dhts.size(); ++i){
+      if(dhts[i].tc == 0 && dhts[i].th == table_inf.dct_cd){
+        dc_haffs = dhts[i].haffs;
+      }
+      if(dhts[i].tc == 1 && dhts[i].th == table_inf.act_cd){
+        ac_haffs = dhts[i].haffs;
+      }
+    }
+    
+    for(int num_index = 0; num_index < block.size(); ++num_index){
+
+      if(num_index == 0) {
+        dc_ac_switch = 0;
+        string bin_num;
+        int bin_num_len;
+
+        if(block[num_index] == 0){
+          bin_num_len = 0;
+        }else{
+          bin_num = to_bin_str(block[num_index]);
+          bin_num_len = bin_num.size();
+        }
+        string haff = search_haff(dc_haffs, bin_num_len);
+        cout << "haff-bin_num-len" << endl;
+        cout << haff << "-" << bin_num << "-" << bin_num_len << endl;
+        img_str += haff;
+        if(block[num_index] != 0) img_str += bin_num;
+      }
+      else {
+        dc_ac_switch = 1;
+        if(block[num_index] == 0){
+          if (zrl == 0) zero_start_index = num_index;
+          ++zrl;
+          eob = true;
+        }else{
+          if(zrl >= 16){
+            string zrl_haff = search_haff(ac_haffs, 0, 15);
+            while(zrl >= 16){
+              cout << "zrl: " << zrl_haff << endl;
+              img_str += zrl_haff;
+              zrl -= 16;
+            }
+            string bin_num = to_bin_str(block[num_index]);
+            cout << "zero: " << zrl << endl;
+            string haff = search_haff(ac_haffs, bin_num.size(), zrl);
+            img_str += haff + bin_num;
+            cout << "haff-bin_num" << endl;
+            cout << haff << "-" << bin_num << endl;
+          }else{
+            string bin_num = to_bin_str(block[num_index]);
+            cout << "zero: " << zrl << endl;
+            string haff = search_haff(ac_haffs, bin_num.size(), zrl);
+            img_str += haff + bin_num;
+            cout << "haff-bin_num" << endl;
+            cout << haff << "-" << bin_num << endl;
+          }
+          zrl = 0;
+          eob = false;
+        }
+      }
+    }
+    if(eob){
+      string eob_haff = search_haff(ac_haffs, 0, 0);
+      cout << "eob: " << eob_haff << endl;
+      img_str += eob_haff;
+      eob = false;
+      zrl = 0;
+    }
+  }
+  int len = img_str.size();
+  if(len % 8 != 0){
+    for(int i = 0; i < (8 + 1) - (i % 8); ++i) img_str.push_back('1');
+  }
+
+  return img_str;
+}
+
 
 int main(int argc, char* argv[]) {
   const char *filepath = argv[1];
@@ -587,6 +729,13 @@ int main(int argc, char* argv[]) {
   printf("Img data length %d\n", (int)img_data.size());
   VECTARR(int) blocks = ana_block(zig_zag, img_data, dqt_tables, dht_tables, sos_tables[0], sof_tables[0]);
 
+  string back_img_str = block_to_img(zig_zag, dqt_tables, dht_tables, sos_tables[0], sof_tables[0], blocks);
+
+
+  cout << back_img_str << endl;
+  cout << back_img_str.size() << endl;
+
+  cout << (back_img_str == cat_bin_str(img_data)) << endl;
 
   return 0;
 
