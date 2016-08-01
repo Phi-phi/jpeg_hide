@@ -169,7 +169,7 @@ vector<dht_t> ana_dht(VECTARR(BYTE) vect) {
     dht_t t;
     vector<BYTE> seg = vect[i];
     int len = (seg[0] << 8) + seg[1] - 2;
-    printf("dht len->%d-now %d\n", len, index);
+    //printf("dht len->%d-now %d\n", len, index);
     if (len < 16) {
       printf("Length error.\n shorter than 16.\n");
       exit(-1);
@@ -323,6 +323,17 @@ string cat_bin_str(vector<BYTE> vect) {
   return bin_str;
 }
 
+vector<BYTE> str_to_bin(string str){
+  vector<BYTE> vect;
+  for(int i = 0; i < str.size(); i += 8){
+    string bin_str_part = str.substr(i, 8);
+    dynamic_bitset<> bs(bin_str_part);
+    vect.push_back((unsigned char)bs.to_ulong());
+    
+  }
+  return vect;
+}
+
 string to_bin_str(int n) {
   bool minus = false;
   string str, minus_str;
@@ -349,6 +360,54 @@ string search_haff(vector<haff_t> haffs, int value, int run_length = 0){
   }
 }
 
+string string_to_bit(string str){
+  string bin_str;
+  for(int i = 0; i < str.size(); ++i){
+    bitset<8> bs(str.c_str()[i]);
+    bin_str += bs.to_string();
+  }
+  return bin_str;
+}
+
+VECTARR(int) write_data(VECTARR(int) blocks, string input_data){
+  string bin_str = string_to_bit(input_data);
+  cout << bin_str << endl;
+  if(bin_str.size() * 2 > blocks.size()) {
+    cout << "err.\n over size()." << endl;
+    exit(-1);
+  }
+  int block_index = 0;
+  for(int i = 0; i < bin_str.size(); ++i){
+    cout << "start" << endl;
+    printf("start\n");
+    vector<int> block1 = blocks[block_index];
+    vector<int> block2 = blocks[block_index + 1];
+    indicate_block(block1);
+    indicate_block(block2);
+    if( bin_str[i] == '0'){
+      if(block1[27] <= block2[27]){
+        int two_block_avr = (block1[27] + block2[27]) / 2;
+        block1[27] = two_block_avr + 2;
+        block2[27] = two_block_avr - 1;
+      }
+    }else{
+      if(block1[27] >= block2[27]){
+        int two_block_avr = (block1[27] + block2[27]) / 2;
+        block1[27] = two_block_avr - 1;
+        block2[27] = two_block_avr + 2;
+      }
+    }
+    cout << "afters" << endl;
+    blocks[block_index] = block1;
+    blocks[block_index + 1] = block2;
+    indicate_block(block1);
+    indicate_block(block2);
+    block_index += 2;
+    printf("end\n");
+  }
+  return blocks;
+}
+
 VECTARR(int) ana_block(
     int             zig_zag[],
     vector<BYTE>    img_data,
@@ -364,7 +423,7 @@ VECTARR(int) ana_block(
   int block_index = 0;
   int num_count_in_block = 0;
   int bin_len = bin_str.size();
-  cout << bin_str << endl;
+  //cout << bin_str << endl;
   int dc_ac_switch = 0; // 0 is dc. 1 is ac.
 
   vector<int> id_box;
@@ -542,7 +601,7 @@ string block_to_img(
 
     for(int i = 0; i < 64; ++i) block.push_back(raw_block[zig_zag[i]]);
     if (block_index > 0) block[0] -= blocks[block_index - 1][0];
-    indicate_block(block);
+    //indicate_block(block);
 
     int now_block_id = id_box[block_index % id_box.size()];
     for( int i = 0; i < sos.infs.size(); ++i){
@@ -576,8 +635,8 @@ string block_to_img(
           bin_num_len = bin_num.size();
         }
         string haff = search_haff(dc_haffs, bin_num_len);
-        cout << "haff-bin_num-len" << endl;
-        cout << haff << "-" << bin_num << "-" << bin_num_len << endl;
+        //cout << "haff-bin_num-len" << endl;
+        //cout << haff << "-" << bin_num << "-" << bin_num_len << endl;
         img_str += haff;
         if(block[num_index] != 0) img_str += bin_num;
       }
@@ -591,23 +650,23 @@ string block_to_img(
           if(zrl >= 16){
             string zrl_haff = search_haff(ac_haffs, 0, 15);
             while(zrl >= 16){
-              cout << "zrl: " << zrl_haff << endl;
+              //cout << "zrl: " << zrl_haff << endl;
               img_str += zrl_haff;
               zrl -= 16;
             }
             string bin_num = to_bin_str(block[num_index]);
-            cout << "zero: " << zrl << endl;
+            //cout << "zero: " << zrl << endl;
             string haff = search_haff(ac_haffs, bin_num.size(), zrl);
             img_str += haff + bin_num;
-            cout << "haff-bin_num" << endl;
-            cout << haff << "-" << bin_num << endl;
+            //cout << "haff-bin_num" << endl;
+            //cout << haff << "-" << bin_num << endl;
           }else{
             string bin_num = to_bin_str(block[num_index]);
-            cout << "zero: " << zrl << endl;
+            //cout << "zero: " << zrl << endl;
             string haff = search_haff(ac_haffs, bin_num.size(), zrl);
             img_str += haff + bin_num;
-            cout << "haff-bin_num" << endl;
-            cout << haff << "-" << bin_num << endl;
+            //cout << "haff-bin_num" << endl;
+            //cout << haff << "-" << bin_num << endl;
           }
           zrl = 0;
           eob = false;
@@ -616,7 +675,7 @@ string block_to_img(
     }
     if(eob){
       string eob_haff = search_haff(ac_haffs, 0, 0);
-      cout << "eob: " << eob_haff << endl;
+      //cout << "eob: " << eob_haff << endl;
       img_str += eob_haff;
       eob = false;
       zrl = 0;
@@ -729,14 +788,25 @@ int main(int argc, char* argv[]) {
   printf("Img data length %d\n", (int)img_data.size());
   VECTARR(int) blocks = ana_block(zig_zag, img_data, dqt_tables, dht_tables, sos_tables[0], sof_tables[0]);
 
+  write_data(blocks, string("phi"));
+
   string back_img_str = block_to_img(zig_zag, dqt_tables, dht_tables, sos_tables[0], sof_tables[0], blocks);
 
-
+/*
+  cout << cat_bin_str(img_data) << endl;
   cout << back_img_str << endl;
   cout << back_img_str.size() << endl;
 
   cout << (back_img_str == cat_bin_str(img_data)) << endl;
+  
+  indicate(str_to_bin(back_img_str));
+  cout << str_to_bin(back_img_str).size() << endl;
+  cout << endl;
+  indicate(img_data);
 
+  cout << (img_data == str_to_bin(back_img_str)) << endl;
+
+*/
   return 0;
-
+  
 }
