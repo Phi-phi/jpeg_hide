@@ -15,6 +15,7 @@
 #define BYTE unsigned char
 #define VECTARR(TYPE) vector< vector<TYPE> >
 #define BYTE_ITR vector<BYTE>::iterator
+#define BLOCK_INDEX 12
 using namespace std;
 using namespace boost;
 
@@ -310,6 +311,28 @@ vector<BYTE> set_ff00_to_ff(vector<BYTE> vect) {
   return vect;
 }
 
+vector<BYTE> set_ff_to_ff00(vector<BYTE> vect){
+  for(int i = 0; i < vect.size(); ++i){
+    if(cmp_bin(vect[i], "ff")){
+      vect.insert(vect.begin() + i + 1, 0x00);
+    }
+  }
+  return vect;
+}
+
+vector<BYTE> insert_img_data(vector<BYTE> img_raw, vector<BYTE> new_img_data){
+  int sos_index = search_vct(img_raw, "ffda");
+  int sos_len = get_segment_length(img_raw, sos_index) + 2;
+  int img_data_index = sos_index + sos_len + 2;
+  int img_data_end_index = search_vct(img_raw, "ffd9");
+
+  vector<BYTE> new_img(img_raw.begin(), img_raw.begin() + img_data_index);
+  new_img.insert(new_img.end(), new_img_data.begin(), new_img_data.end());
+  new_img.insert(new_img.end(), img_raw.begin() + img_data_end_index, img_raw.end());
+
+  return new_img;
+}
+
 string cat_bin_str(vector<BYTE> vect) {
   int vect_len = vect.size();
   string bin_str;
@@ -360,8 +383,19 @@ string search_haff(vector<haff_t> haffs, int value, int run_length = 0){
   }
 }
 
+char convert_bin_to_char(string binary){
+  char letter;
+  if(binary.size() != 8){
+    return 0x03;
+  }
+  bitset<8> bs(binary);
+  letter = (char)bs.to_ulong();
+  return letter;
+}
+
 string string_to_bit(string str){
   string bin_str;
+  str.push_back(0x03);
   for(int i = 0; i < str.size(); ++i){
     bitset<8> bs(str.c_str()[i]);
     bin_str += bs.to_string();
@@ -369,41 +403,93 @@ string string_to_bit(string str){
   return bin_str;
 }
 
-VECTARR(int) write_data(VECTARR(int) blocks, string input_data){
+string read_data_from_blocks(VECTARR(int) blocks){
+  string hidden_bin;
+  string hidden_data;
+  for(int i = 2; i < blocks.size() - 1; i += 2){
+    //indicate_block(blocks[i]);
+    //indicate_block(blocks[i+1]);
+    int num1 = blocks[i][BLOCK_INDEX];
+    int num2 = blocks[i+1][BLOCK_INDEX];
+    cout << num1 << " - " << num2 << endl;
+
+    if(num1 < num2){
+      hidden_bin.push_back('1');
+    }else if(num1 > num2){
+      hidden_bin.push_back('0');
+    }else{
+      cout << "Error. hidden data may be corrupted.\n" << endl;
+      exit(-1);
+    }
+    if(hidden_bin.size() % 8 == 0){
+      cout << hidden_bin << endl;
+      char hidden_letter = convert_bin_to_char(hidden_bin);
+      cout << hidden_letter << endl;
+      if(
+          hidden_letter < 0x08 ||
+          (hidden_letter > 0x0b && hidden_letter < 0x20)
+      ){
+        break;
+      }else{
+        hidden_data.push_back(hidden_letter);
+      }
+      hidden_bin.clear();
+    }
+  }
+  return hidden_data;
+}
+
+vector<int> make_id_box(sof_t sof){
+  vector<int> id_box;
+  for(int i = 0; i < sof.pors.size(); ++i){
+    int por_length = sof.pors[i].vn * sof.pors[i].hn;
+    id_box.insert(id_box.end(), por_length, sof.pors[i].id);
+  }
+  return id_box;
+}
+
+VECTARR(int) write_data(VECTARR(int) blocks, string input_data, sof_t sof){
   string bin_str = string_to_bit(input_data);
   cout << bin_str << endl;
   if(bin_str.size() * 2 > blocks.size()) {
     cout << "err.\n over size()." << endl;
     exit(-1);
   }
-  int block_index = 0;
+
+  vector<int> id_box = make_id_box(sof);
+  int block_index = 2;
   for(int i = 0; i < bin_str.size(); ++i){
-    cout << "start" << endl;
-    printf("start\n");
+    if(id_box[block_index % id_box.size()] != 1){
+      --i;
+      continue;
+    }
     vector<int> block1 = blocks[block_index];
     vector<int> block2 = blocks[block_index + 1];
-    indicate_block(block1);
-    indicate_block(block2);
+    //indicate_block(block1);
+    //indicate_block(block2);
     if( bin_str[i] == '0'){
-      if(block1[27] <= block2[27]){
-        int two_block_avr = (block1[27] + block2[27]) / 2;
-        block1[27] = two_block_avr + 2;
-        block2[27] = two_block_avr - 1;
+      if(block1[BLOCK_INDEX] - 1 <= block2[BLOCK_INDEX]){
+        int two_block_avr = (block1[BLOCK_INDEX] + block2[BLOCK_INDEX]) / 2;
+        block1[BLOCK_INDEX] = two_block_avr + 1;
+        block2[BLOCK_INDEX] = two_block_avr - 1;
       }
     }else{
-      if(block1[27] >= block2[27]){
-        int two_block_avr = (block1[27] + block2[27]) / 2;
-        block1[27] = two_block_avr - 1;
-        block2[27] = two_block_avr + 2;
+      if(block1[BLOCK_INDEX] >= block2[BLOCK_INDEX] - 1){
+        int two_block_avr = (block1[BLOCK_INDEX] + block2[BLOCK_INDEX]) / 2;
+        block1[BLOCK_INDEX] = two_block_avr - 1;
+        block2[BLOCK_INDEX] = two_block_avr + 1;
       }
     }
-    cout << "afters" << endl;
+    //indicate_block(block1);
+    //indicate_block(block2);
     blocks[block_index] = block1;
     blocks[block_index + 1] = block2;
-    indicate_block(block1);
-    indicate_block(block2);
+    cout << blocks[block_index][BLOCK_INDEX] 
+      << " - " << 
+      blocks[block_index + 1][BLOCK_INDEX] 
+      << endl;
     block_index += 2;
-    printf("end\n");
+    if((i + 1) % 8 == 0) cout << "----------------" << endl;
   }
   return blocks;
 }
@@ -426,20 +512,13 @@ VECTARR(int) ana_block(
   //cout << bin_str << endl;
   int dc_ac_switch = 0; // 0 is dc. 1 is ac.
 
-  vector<int> id_box;
-  vector<int> dqt_box;
+  vector<int> id_box = make_id_box(sof);
   
   vector<int> block;
   dht_inf table_inf;
   vector<haff_t> haffs;
   dqt_t dqt_t;
   bool eob = false;
-
-  for(int i = 0; i < sof.pors.size(); ++i){
-    int por_length = sof.pors[i].vn * sof.pors[i].hn;
-    id_box.insert(id_box.end(), por_length, sof.pors[i].id);
-    dqt_box.push_back(sof.pors[i].dqn);
-  }
 
   while (num_index < bin_len) {
     int now_block_id_index = block_index % id_box.size();
@@ -692,6 +771,7 @@ string block_to_img(
 
 int main(int argc, char* argv[]) {
   const char *filepath = argv[1];
+  const char *mode = argv[2];
   vector<BYTE> img_raw;
   image_inf inf;
   int zig_zag[] = { 0, 1, 8, 16, 9, 2, 3, 10,
@@ -788,10 +868,32 @@ int main(int argc, char* argv[]) {
   printf("Img data length %d\n", (int)img_data.size());
   VECTARR(int) blocks = ana_block(zig_zag, img_data, dqt_tables, dht_tables, sos_tables[0], sof_tables[0]);
 
-  write_data(blocks, string("phi"));
+  string result;
+  if(strcmp(mode, "-w") == 0){
+    cout << "writing mode." << endl;
+    blocks = write_data(blocks, string("@nei_phi213km"), sof_tables[0]);
+    cout << "written" << endl;
+  }else if(strcmp(mode, "-r") == 0){
+    cout << "reading mode." << endl;
+    result = read_data_from_blocks(blocks);
+    cout << result << endl;
+    exit(0);
+  }else{
+    cout << "only check header." << endl;
+    exit(0);
+  }
 
   string back_img_str = block_to_img(zig_zag, dqt_tables, dht_tables, sos_tables[0], sof_tables[0], blocks);
 
+  vector<BYTE> new_img_data = str_to_bin(back_img_str);
+
+  new_img_data = set_ff_to_ff00(new_img_data);
+
+  vector<BYTE> new_img_content = insert_img_data(img_raw, new_img_data);
+
+  ofstream ofs;
+  ofs.open("output.jpg", ios::out|ios::binary|ios::trunc);
+  ofs.write((const char*)&new_img_content[0], new_img_content.size());
 /*
   cout << cat_bin_str(img_data) << endl;
   cout << back_img_str << endl;
